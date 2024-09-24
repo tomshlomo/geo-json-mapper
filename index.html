@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Geographical JSON Mapper</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.css"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css"/>
+    <style>
+        body {
+            display: flex;
+            height: 100vh;
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        #sidebar {
+            flex-basis: 30%;
+            padding: 20px;
+            background-color: #f1f1f1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #map {
+            flex-grow: 1;
+            height: 100%;
+        }
+
+        textarea {
+            width: 100%;
+            height: 150px;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+
+        button {
+            width: 100%;
+            margin-top: 10px;
+            padding: 10px;
+            font-size: 14px;
+        }
+
+        .leaflet-popup-content-wrapper {
+            background-color: #fff;
+            color: #333;
+            box-shadow: 0 3px 14px rgba(0, 0, 0, 0.4);
+        }
+
+        .leaflet-popup-content {
+            margin: 13px 19px;
+        }
+
+        .copy-icon, .add-icon {
+            cursor: pointer;
+            margin-left: 5px;
+            font-size: 14px;
+            display: inline-block;
+            width: 18px;
+            height: 18px;
+            text-align: center;
+            line-height: 18px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            background-color: #f8f8f8;
+        }
+
+        .add-icon {
+            font-weight: bold;
+        }
+
+        #pointList {
+            margin-top: 20px;
+            flex-grow: 1;
+            overflow-y: auto;
+        }
+
+        #pointList table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        #pointList th, #pointList td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        #pointList th {
+            background-color: #f2f2f2;
+        }
+
+        .action-btn {
+            cursor: pointer;
+            padding: 2px;
+            margin: 0 2px;
+            background-color: transparent;
+            color: #333;
+            border: none;
+            font-size: 14px;
+        }
+
+        .action-btn:hover {
+            color: #000;
+        }
+
+        .action-btn:disabled {
+            color: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+<div id="sidebar">
+    <textarea id="jsonInput" placeholder="Paste your JSON here" autofocus></textarea>
+    <div style="display: flex; gap: 1em">
+        <button onclick="processJSON()">Process JSON</button>
+        <button onclick="showExplanation()">How to Use</button>
+        <button onclick="openInGoogleMaps()">Open in Google Maps</button>
+    </div>
+    <div id="pointList">
+        <h2>Selected Points</h2>
+        <table id="pointTable">
+            <thead>
+            <tr>
+                <th>Coordinates</th>
+                <th>Actions</th>
+            </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+</div>
+<div id="map"></div>
+
+<div id="explanation-popup" class="leaflet-popup" style="display: none;">
+    <a href="#" class="leaflet-popup-close-button" onclick="hideExplanation()">&times;</a>
+    <div class="leaflet-popup-content-wrapper">
+        <div class="leaflet-popup-content">
+            <h3>How to Use the Geographical JSON Mapper</h3>
+            <p>1. Paste your JSON data containing geographical coordinates into the text area.</p>
+            <p>2. Click the "Process JSON" button to display the points on the map.</p>
+            <p>3. Click on a marker to see the JSON paths corresponding to that point.
+                <br>Green markers indicate a single path, while red markers indicate multiple paths.</p>
+            <p>4. Click anywhere on the map to see the coordinates and copy them.</p>
+            <p>5. Click the "+" button to add a point to the list.</p>
+            <p>6. Use the trash icon to delete a point from the list.</p>
+            <p>7. Use the up and down arrows to reorder points in the list.</p>
+            <p>8. Click the "Open in Google Maps" button to view the selected points in Google Maps.</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById('jsonInput').value = `{
+  "Sabich Tchernichovsky": {
+    "lat": 32.07057535480609,
+    "lng": 34.77035486809611
+  },
+  "Via Office": {
+    "lat": 32.077381641729104,
+    "lng": 34.79328018361948
+  }
+}`;
+    let map = L.map('map').setView([0, 0], 2);
+    let selectedPoints = [];
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }).addTo(map);
+
+    map.on('click', function (e) {
+        const lat = e.latlng.lat.toFixed(6);
+        const lng = e.latlng.lng.toFixed(6);
+        const coordinates = `${lat}, ${lng}`;
+        L.popup({
+            closeOnClick: false,
+            autoClose: false
+        })
+            .setLatLng(e.latlng)
+            .setContent(`${coordinates} <span class="copy-icon" onclick="copyToClipboard('${coordinates}')">📋</span><span class="add-icon" onclick="addPointToList('${coordinates}')">+</span>`)
+            .openOn(map);
+    });
+
+    function copyToClipboard(text) {
+        navigator.clipboard.writeText(text).then(function () {
+            console.log('Coordinates copied to clipboard');
+        }, function (err) {
+            console.error('Could not copy text: ', err);
+        });
+    }
+
+    function processJSON() {
+        const jsonInput = document.getElementById('jsonInput').value;
+        try {
+            const data = JSON.parse(jsonInput);
+            const points = findCoordinates(data);
+            displayPoints(points);
+        } catch (error) {
+            alert('Invalid JSON: ' + error.message);
+        }
+    }
+
+    function findCoordinates(obj, path = [], result = {}) {
+        if (typeof obj !== 'object' || obj === null) return result;
+
+        const latFields = ['lat', 'latitude'];
+        const lonFields = ['lon', 'lng', 'longitude'];
+
+        let lat, lon;
+
+        for (const latField of latFields) {
+            if (latField in obj && typeof obj[latField] === 'number') {
+                lat = obj[latField];
+                break;
+            }
+        }
+
+        for (const lonField of lonFields) {
+            if (lonField in obj && typeof obj[lonField] === 'number') {
+                lon = obj[lonField];
+                break;
+            }
+        }
+
+        if (lat !== undefined && lon !== undefined) {
+            const key = `${lat},${lon}`;
+            if (!(key in result)) {
+                result[key] = {lat, lon, paths: []};
+            }
+            result[key].paths.push(path.join(' > '));
+        }
+
+        for (const [key, value] of Object.entries(obj)) {
+            findCoordinates(value, [...path, key], result);
+        }
+
+        return Object.values(result);
+    }
+
+    function displayPoints(points) {
+        map.eachLayer(layer => {
+            if (layer instanceof L.Marker) {
+                map.removeLayer(layer);
+            }
+        });
+
+        points.forEach(point => {
+            const numPaths = point.paths.length;
+            const icon = getMarkerIcon(numPaths);
+            const marker = L.marker([point.lat, point.lon], {icon}).addTo(map);
+            const coordinates = `${point.lat}, ${point.lon}`;
+            marker.bindPopup(`${coordinates} <span class="copy-icon" onclick="copyToClipboard('${coordinates}')">📋</span><span class="add-icon" onclick="addPointToList('${coordinates}')">+</span><br>Paths:<br>${point.paths.join('<br>')}`);
+        });
+
+        if (points.length > 0) {
+            map.fitBounds(points.map(p => [p.lat, p.lon]));
+        }
+    }
+
+    function getMarkerIcon(numPaths) {
+        if (numPaths === 1) {
+            return L.icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+        } else {
+            return L.icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+                shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+                iconSize: [25, 41],
+                iconAnchor: [12, 41],
+                popupAnchor: [1, -34],
+                shadowSize: [41, 41]
+            });
+        }
+    }
+
+    function showExplanation() {
+        const explanationPopup = document.getElementById('explanation-popup');
+        explanationPopup.style.display = 'block';
+    }
+
+    function hideExplanation() {
+        const explanationPopup = document.getElementById('explanation-popup');
+        explanationPopup.style.display = 'none';
+    }
+
+    function addPointToList(coordinates) {
+        selectedPoints.push(coordinates);
+        updatePointList();
+    }
+
+    function updatePointList() {
+        const tableBody = document.querySelector('#pointTable tbody');
+        tableBody.innerHTML = '';
+        selectedPoints.forEach((point, index) => {
+            const row = tableBody.insertRow();
+            const cellCoordinates = row.insertCell(0);
+            const cellActions = row.insertCell(1);
+            cellCoordinates.textContent = point;
+            cellActions.style.display = 'flex';
+            cellActions.innerHTML = `
+                    <button class="action-btn" onclick="removePoint(${index})" title="Remove"><i class="fas fa-trash"></i></button>
+                    <button class="action-btn" onclick="movePointUp(${index})" ${index === 0 ? 'disabled' : ''} title="Move Up"><i class="fas fa-arrow-up"></i></button>
+                    <button class="action-btn" onclick="movePointDown(${index})" ${index === selectedPoints.length - 1 ? 'disabled' : ''} title="Move Down"><i class="fas fa-arrow-down"></i></button>
+                `;
+        });
+    }
+
+    function removePoint(index) {
+        selectedPoints.splice(index, 1);
+        updatePointList();
+    }
+
+    function movePointUp(index) {
+        if (index > 0) {
+            const temp = selectedPoints[index];
+            selectedPoints[index] = selectedPoints[index - 1];
+            selectedPoints[index - 1] = temp;
+            updatePointList();
+        }
+    }
+
+    function movePointDown(index) {
+        if (index < selectedPoints.length - 1) {
+            const temp = selectedPoints[index];
+            selectedPoints[index] = selectedPoints[index + 1];
+            selectedPoints[index + 1] = temp;
+            updatePointList();
+        }
+    }
+
+    function openInGoogleMaps() {
+        const center = map.getCenter();
+        const zoom = map.getZoom();
+        const latCenter = center.lat.toFixed(6);
+        const lonCenter = center.lng.toFixed(6);
+
+        if (selectedPoints.length > 0) {
+            const points = selectedPoints.map(point => point.split(', ').map(coord => coord.trim()));
+            const path = points.map(([lat, lon]) => `${lat},${lon}`).join('/');
+            const url = `https://www.google.com/maps/dir/${path}/@${latCenter},${lonCenter},${zoom}z`;
+            window.open(url, '_blank');
+        } else {
+            const url = `https://www.google.com/maps/@${latCenter},${lonCenter},${zoom}z`;
+            window.open(url, '_blank');
+        }
+    }
+
+    document.getElementById('jsonInput').addEventListener('keydown', function (event) {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+            processJSON();
+        }
+    });
+</script>
+</body>
+</html>
